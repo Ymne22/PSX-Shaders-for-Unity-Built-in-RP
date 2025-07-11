@@ -4,7 +4,7 @@
   <img src="Screenshots/PSX_Preview.gif" alt="PSX Preview" width="800"/>
 </p>
 
-A collection of PlayStation 1-inspired shaders for Unity's **Built-in Render Pipeline (BRP)**, designed to replicate the visual quirks and style of early 3D console graphics. This pack includes fog effects, vertex jittering (material based), dithered transparency, pixelation, and color quantization — capturing the distinct low-fidelity charm of the PSX era.
+A collection of PlayStation 1-inspired shaders for Unity's **Built-in Render Pipeline (BRP)**, designed to replicate the visual style of early PSX. This pack includes fog effects, vertex jittering (material based), dithered transparency, pixelation, and color quantization.
 
 ---
 
