@@ -29,87 +29,105 @@ Shader "PSX/PSX_Material_Water"
         Blend SrcAlpha OneMinusSrcAlpha
         ZWrite Off
 
-        CGPROGRAM
-        #pragma surface surf Lambert vertex:vert alpha:fade fullforwardshadows
-
-        fixed4 _WaterColor;
-        sampler2D _MainTex;
-        float _TextureScrollSpeedX;
-        float _TextureScrollSpeedY;
-        sampler2D _SecondTex;
-        float _SecondTextureScrollSpeedX;
-        float _SecondTextureScrollSpeedY;
-        float _DistortionStrength;
-        float _JitterIntensity;
-        float _EnableWaves;
-        float _WaveAmplitude;
-        float _WaveFrequency;
-        float _WaveSpeed;
-        float _ColorQuantizationLevels;
-        float4 _RippleCenterStatic;
-        float _RippleSpeedStatic;
-        float _RippleStrengthStatic;
-        float _RippleDensityStatic;
-
-        struct Input
+        Pass
         {
-            float2 uv_MainTex;
-            float3 worldPos;
-            float3 viewDir;
-        };
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 3.0
 
-        void vert (inout appdata_full v, out Input o)
-        {
-            UNITY_INITIALIZE_OUTPUT(Input, o);
+            #include "UnityCG.cginc"
 
-            o.uv_MainTex = v.texcoord;
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+            sampler2D _SecondTex;
+            float4 _SecondTex_ST;
 
-            float4x4 modelView = mul(UNITY_MATRIX_V, unity_ObjectToWorld);
-            float4 viewPos = mul(modelView, v.vertex);
-            viewPos.xyz = floor(viewPos.xyz * _JitterIntensity) / _JitterIntensity;
-            
-            float4x4 inverseModelView = unity_WorldToObject;
-            inverseModelView = mul(inverseModelView, UNITY_MATRIX_I_V);
-            v.vertex = mul(inverseModelView, viewPos);
+            float4 _WaterColor;
+            float _TextureScrollSpeedX;
+            float _TextureScrollSpeedY;
+            float _SecondTextureScrollSpeedX;
+            float _SecondTextureScrollSpeedY;
+            float _DistortionStrength;
+            float _JitterIntensity;
+            float _EnableWaves;
+            float _WaveAmplitude;
+            float _WaveFrequency;
+            float _WaveSpeed;
+            float _ColorQuantizationLevels;
+            float4 _RippleCenterStatic;
+            float _RippleSpeedStatic;
+            float _RippleStrengthStatic;
+            float _RippleDensityStatic;
 
-            if (_EnableWaves > 0.5)
+            struct appdata
             {
-                float waveOffset = sin(_Time.y * _WaveSpeed + v.vertex.x * _WaveFrequency + v.vertex.z * _WaveFrequency) * _WaveAmplitude;
-                v.vertex.y += waveOffset;
+                float4 vertex : POSITION;
+                float2 uv     : TEXCOORD0;
+            };
+
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float2 uv  : TEXCOORD0;
+                float  w   : TEXCOORD1;
+                float3 worldPos : TEXCOORD2;
+            };
+
+            v2f vert (appdata v)
+            {
+                v2f o;
+
+                float4x4 modelView = mul(UNITY_MATRIX_V, unity_ObjectToWorld);
+                float4 viewPos = mul(modelView, v.vertex);
+                viewPos.xyz = floor(viewPos.xyz * _JitterIntensity) / _JitterIntensity;
+
+                float4x4 inverseModelView = mul(unity_WorldToObject, UNITY_MATRIX_I_V);
+                float4 worldPos = mul(inverseModelView, viewPos);
+
+                if (_EnableWaves > 0.5)
+                {
+                    float waveOffset = sin(_Time.y * _WaveSpeed + worldPos.x * _WaveFrequency + worldPos.z * _WaveFrequency) * _WaveAmplitude;
+                    worldPos.y += waveOffset;
+                }
+
+                float4 clipPos = UnityObjectToClipPos(worldPos);
+                o.pos = clipPos;
+
+                float2 uv = TRANSFORM_TEX(v.uv, _MainTex);
+                o.uv = uv * clipPos.w;
+                o.w  = clipPos.w;
+
+                o.worldPos = mul(unity_ObjectToWorld, worldPos).xyz;
+                return o;
             }
 
-            o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-            o.viewDir = WorldSpaceViewDir(v.vertex);
+            fixed4 frag (v2f i) : SV_Target
+            {
+                float2 uv = i.uv / i.w;
+
+                float2 uvDistort = uv + float2(_Time.y * _SecondTextureScrollSpeedX, _Time.y * _SecondTextureScrollSpeedY);
+                fixed4 distortionTex = tex2D(_SecondTex, uvDistort);
+
+                float2 uvPrimary = uv + float2(_Time.y * _TextureScrollSpeedX, _Time.y * _TextureScrollSpeedY);
+
+                float2 distortionOffset = (distortionTex.rg * 2.0 - 1.0) * _DistortionStrength;
+
+                float distToRippleCenter = distance(i.worldPos.xz, _RippleCenterStatic.xz);
+                float rippleWave = sin((distToRippleCenter * _RippleDensityStatic) - (_Time.y * _RippleSpeedStatic)) * _RippleStrengthStatic;
+                distortionOffset += float2(rippleWave, rippleWave);
+
+                uvPrimary += distortionOffset;
+
+                fixed4 texCol = tex2D(_MainTex, uvPrimary);
+                fixed4 finalCol = _WaterColor;
+                finalCol.rgb *= texCol.rgb;
+                finalCol.a   *= texCol.a;
+                finalCol.rgb = floor(finalCol.rgb * _ColorQuantizationLevels) / _ColorQuantizationLevels;
+
+                return finalCol;
+            }
+            ENDCG
         }
-
-        void surf (Input IN, inout SurfaceOutput o)
-        {
-            o.Normal = float3(0,1,0); 
-
-            float2 animatedUVsDistortion = IN.uv_MainTex + float2(_Time.y * _SecondTextureScrollSpeedX, _Time.y * _SecondTextureScrollSpeedY);
-            fixed4 distortionTexColor = tex2D(_SecondTex, animatedUVsDistortion);
-
-            float2 animatedUVsPrimary = IN.uv_MainTex + float2(_Time.y * _TextureScrollSpeedX, _Time.y * _TextureScrollSpeedY);
-
-            float2 distortionOffset = (distortionTexColor.rg * 2.0 - 1.0) * _DistortionStrength;
-            
-            float distToRippleCenter = distance(IN.worldPos.xz, _RippleCenterStatic.xz);
-            float rippleWave = sin((distToRippleCenter * _RippleDensityStatic) - (_Time.y * _RippleSpeedStatic)) * _RippleStrengthStatic;
-            distortionOffset += float2(rippleWave, rippleWave);
-
-            animatedUVsPrimary += distortionOffset;
-
-            fixed4 primaryTexColor = tex2D(_MainTex, animatedUVsPrimary);
-
-            fixed4 finalColor = _WaterColor;
-            finalColor.rgb *= primaryTexColor.rgb;
-            finalColor.a *= primaryTexColor.a;
-            finalColor.rgb = floor(finalColor.rgb * _ColorQuantizationLevels) / _ColorQuantizationLevels;
-
-            o.Albedo = finalColor.rgb;
-            o.Alpha = finalColor.a;
-        }
-        ENDCG
     }
-    FallBack "Diffuse"
 }
